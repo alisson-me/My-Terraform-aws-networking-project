@@ -1,7 +1,7 @@
 # My-Terraform-aws-networking-project
 This repo contains a Terraform config file to manage and automate an AWS cloud infrastructure. .
 
-My goal is to create a
+My goal is to;
 create a VPC , 
 Create an internet gateway, 
 Create custom route table, 
