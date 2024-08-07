@@ -1,0 +1,133 @@
+# 1- create vpc
+resource "aws_vpc" "new_vpc" {
+  cidr_block = "10.0.0.0/16"
+
+  tags = {
+    Name = "prod-vpc"
+  }
+}
+
+# 2- create internet-gateway
+resource "aws_internet_gateway" "new_gateway" {
+  vpc_id = aws_vpc.new_vpc.id
+
+  tags = {
+    Name = "prod-gateway"
+  }
+}
+
+# 3- create route table
+resource "aws_route_table" "prod-route-table" {
+  vpc_id = aws_vpc.new_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.new_gateway.id
+  }
+
+  tags = {
+    Name = "prod-rt"
+  }
+}
+
+# 4- create subnet
+resource "aws_subnet" "subnet_1" {
+  vpc_id            = aws_vpc.new_vpc.id
+  cidr_block        = "10.0.1.0/24"
+  availability_zone = "us-east-1a"
+
+  tags = {
+    Name = "prod-subnet"
+  }
+}
+
+# 5- Associate subnet with route table
+resource "aws_route_table_association" "a" {
+  subnet_id      = aws_subnet.subnet_1.id
+  route_table_id = aws_route_table.prod-route-table.id
+}
+
+# 6- create security-group for ports 22,80,443
+resource "aws_security_group" "allow_web" {
+  name        = "allow_webtraffic"
+  description = "Allow web traffic"
+  vpc_id      = aws_vpc.new_vpc.id
+
+  tags = {
+    Name = "allow_tls"
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "allow_web_ipv4" {
+  security_group_id = aws_security_group.allow_mweb.id
+  cidr_ipv4         = aws_vpc.new_vpc."0.0.0.0/0"
+  from_port         = 443
+  ip_protocol       = "tcp"
+  to_port           = 443
+}
+
+resource "aws_vpc_security_group_ingress_rule" "allow_web_ipv4" {
+  security_group_id = aws_security_group.allow_mweb.id
+  cidr_ipv4         = aws_vpc.new_vpc."0.0.0.0/0"
+  from_port         = 80
+  ip_protocol       = "tcp"
+  to_port           = 80
+}
+
+resource "aws_vpc_security_group_ingress_rule" "allow_web_ipv4" {
+  security_group_id = aws_security_group.allow_mweb.id
+  cidr_ipv4         = aws_vpc.new_vpc."0.0.0.0/0"
+  from_port         = 22
+  ip_protocol       = "tcp"
+  to_port           = 22
+
+  tags = {
+    Name = "allow_ruleweb"
+  }
+}
+
+resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv4" {
+  security_group_id = aws_security_group.allow_web.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1" # semantically equivalent to all ports
+}
+
+# 7 - create a network interface with an ip in the subnet that was created in step 4
+resource "aws_network_interface" "web-server-ni" {
+  subnet_id       = aws_subnet.subnet_1.id
+  private_ips     = "10.0.1.50"
+  security_groups = aws_security_group.allow_web.id
+
+  resource "aws_eip" "one" {
+    domain                    = "vpc"
+    network_interface         = aws_network_interface.web-server-ni.id
+    associate_with_private_ip = "10.0.0.50"
+    depends_on                = [aws_internet_gateway.new_gateway]
+  }
+}
+
+# 8- create linux server and install apache 2
+resource "aws_instance" "web-server-instance" {
+  ami               = "ami-01ffda1cb8a1d6fb1"
+  instance_type     = "t2.micro"
+  availability_zone = "us-east-1a"
+  #key_pair = "mykeypair.pem"
+
+  network_interface {
+    network_interface_id = aws_network_interface.web-server-ni.id
+    device_index         = 0
+  }
+
+  user_data = <<-EOF
+              #!/bin/bash
+              sudo dnf update -y
+              sudo dnf install apache2 -y
+              sudo systemctl start apache2
+              sudo bash -c "echo my first automated terraform web server" >> /var/www/html/index.html
+              EOF
+
+  tags = {
+    Name = "my-linux-instance"
+  }
+}
+
